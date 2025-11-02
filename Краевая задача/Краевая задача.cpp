@@ -1,4 +1,3 @@
-﻿// Я УСТАЛ ЕГО ПИСАТЬ, ОН У МЕНЯ НЕ РАБОТАЛ, Я НЕ ПОНИМАЮ ПОЧЕМУ ТАКАЯ БОЛЬШАЯ ПОГРЕШНОСТЬ, МОЖЕТ БЫТЬ НЕПРАВИЛЬНО ВЫЧИСЛИЛ КОЭФФИЦИЕНТЫ...Т_Т
 #include <iostream>
 #include <cmath>
 #include <iomanip>
@@ -7,7 +6,7 @@
 
 using namespace std;
 
-const int N = 1000;
+const int N = 10000;
 const double ax = 0.0, bx = 1.0;
 
 double y_an(double x) {
@@ -26,7 +25,19 @@ double f1(double x) {
     return exp(-4.0 * x) + x * exp(-x);
 }
 
-void saveToFile(const vector<double>& x, const vector<double>& y, const vector<double>& y_analytical, double error) {
+// Функция для вычисления производной
+double y_an_derivative(double x) {
+    return exp(x) - 0.2 * exp(-4.0 * x) + 0.8 * x * exp(-4.0 * x) - (1.0 / 6.0) + (1.0 / 36.0) * exp(-x);
+}
+
+// Функция для вычисления второй производной
+double y_an_second_derivative(double x) {
+    return exp(x) + 0.8 * exp(-4.0 * x) - 3.2 * x * exp(-4.0 * x) + 0.8 * exp(-4.0 * x) - (1.0 / 36.0) * exp(-x);
+}
+
+void saveToFile(const vector<double>& x, const vector<double>& y, const vector<double>& y_analytical,
+    const vector<double>& first_order_error, const vector<double>& second_order_error,
+    double avg_error, double max_error, double first_order_max, double second_order_max) {
     ofstream outFile("results.txt");
 
     if (!outFile.is_open()) {
@@ -36,16 +47,23 @@ void saveToFile(const vector<double>& x, const vector<double>& y, const vector<d
 
     outFile << fixed << setprecision(6);
     outFile << "Результаты решения краевой задачи:" << endl;
-    outFile << "x\t\tЧисленное решение\tАналитическое решение" << endl;
-    outFile << "------------------------------------------------" << endl;
+    outFile << "x\t\tЧисленное решение\tАналитическое решение\tПогрешность 1-го порядка\tПогрешность 2-го порядка" << endl;
+    outFile << "--------------------------------------------------------------------------------------------------------" << endl;
 
     for (int i = 0; i <= N; i++) {
-        outFile << setw(6) << setprecision(2) << x[i] << "\t\t"
-            << setw(10) << setprecision(6) << y[i] << "\t\t"
-            << setw(10) << setprecision(6) << y_analytical[i] << endl;
+        outFile << setw(6) << setprecision(3) << x[i] << "\t\t"
+            << setw(15) << setprecision(8) << y[i] << "\t\t"
+            << setw(15) << setprecision(8) << y_analytical[i] << "\t\t"
+            << setw(15) << setprecision(8) << first_order_error[i] << "\t\t"
+            << setw(15) << setprecision(8) << second_order_error[i] << endl;
     }
 
-    outFile << endl << "Средняя ошибка: " << error << endl;
+    outFile << endl << "СТАТИСТИКА ПОГРЕШНОСТЕЙ:" << endl;
+    outFile << "Средняя абсолютная погрешность: " << avg_error << endl;
+    outFile << "Максимальная абсолютная погрешность: " << max_error << endl;
+    outFile << "Максимальная погрешность 1-го порядка: " << first_order_max << endl;
+    outFile << "Максимальная погрешность 2-го порядка: " << second_order_max << endl;
+
     outFile.close();
 
     cout << "Результаты сохранены в файл results.txt" << endl;
@@ -55,7 +73,8 @@ int main() {
     setlocale(LC_ALL, "Russian");
     vector<double> x(N + 1), y(N + 1), A(N + 1), B(N + 1), C(N + 1), F(N + 1), aa(N + 1), bb(N + 1);
     vector<double> y_analytical(N + 1);
-    double h, error;
+    vector<double> first_order_error(N + 1), second_order_error(N + 1);
+    double h, error, max_error = 0.0;
     int i;
 
     h = (bx - ax) / N;
@@ -80,7 +99,7 @@ int main() {
     B[N] = 1.0 + 1.0 / h;
     C[N] = -1.0 / h;
     F[N] = 2.0 * exp(1) - (1.0 / 6.0) * exp(-1) + (2.0 / 5.0) * exp(-4.0);
-    // Прямой ход прогонки
+
     aa[0] = -A[0] / B[0];
     bb[0] = F[0] / B[0];
 
@@ -89,31 +108,119 @@ int main() {
         bb[i] = (F[i] - C[i] * bb[i - 1]) / (C[i] * aa[i - 1] + B[i]);
     }
 
-    // Обратный ход прогонки
     y[N] = (F[N] - bb[N - 1] * C[N]) / (B[N] + aa[N - 1] * C[N]);
 
     for (i = N - 1; i >= 0; i--) {
         y[i] = aa[i] * y[i + 1] + bb[i];
     }
 
-    // Вывод результатов
-    cout << fixed << setprecision(6);
+    // Вычисление погрешностей
+    error = 0;
+    double first_order_max_error = 0.0, second_order_max_error = 0.0;
+
     for (i = 0; i <= N; i++) {
-        cout << setw(6) << setprecision(2) << x[i] << " , "
-            << setw(10) << setprecision(6) << y[i] << " , "
-            << setw(10) << setprecision(6) << y_analytical[i] << endl;
+        double abs_error = abs(y[i] - y_analytical[i]);
+        error += abs_error;
+
+        if (abs_error > max_error) {
+            max_error = abs_error;
+        }
+
+        // Аппроксимация первого порядка (разностная производная вперед)
+        if (i < N) {
+            double numerical_derivative = (y[i + 1] - y[i]) / h;
+            double analytical_derivative = y_an_derivative(x[i]);
+            first_order_error[i] = abs(numerical_derivative - analytical_derivative);
+
+            if (first_order_error[i] > first_order_max_error) {
+                first_order_max_error = first_order_error[i];
+            }
+        }
+        else {
+            // Для последней точки используем разностную производную назад
+            double numerical_derivative = (y[i] - y[i - 1]) / h;
+            double analytical_derivative = y_an_derivative(x[i]);
+            first_order_error[i] = abs(numerical_derivative - analytical_derivative);
+
+            if (first_order_error[i] > first_order_max_error) {
+                first_order_max_error = first_order_error[i];
+            }
+        }
+
+        // Аппроксимация второго порядка (центральная разность)
+        if (i > 0 && i < N) {
+            double numerical_second_derivative = (y[i + 1] - 2 * y[i] + y[i - 1]) / (h * h);
+            double analytical_second_derivative = y_an_second_derivative(x[i]);
+            second_order_error[i] = abs(numerical_second_derivative - analytical_second_derivative);
+
+            if (second_order_error[i] > second_order_max_error) {
+                second_order_max_error = second_order_error[i];
+            }
+        }
+        else {
+            second_order_error[i] = 0.0; // Для граничных точек
+        }
     }
 
-    // Вычисление средней ошибки
-    error = 0;
-    for (i = 1; i <= N; i++) {
-        error += abs(y[i] - y_analytical[i]);
+    error = error / (N + 1);
+
+    // Вывод результатов в консоль
+    cout << fixed << setprecision(6);
+    cout << "РЕЗУЛЬТАТЫ РЕШЕНИЯ КРАЕВОЙ ЗАДАЧИ:" << endl;
+    cout << "===================================" << endl;
+
+    // Вывод первых 10 и последних 10 точек чисто для наглядности
+    cout << "Первые 10 точек:" << endl;
+    cout << "x\t\tЧисленное\tАналитическое\tПогр.1-го пор.\tПогр.2-го пор." << endl;
+    cout << "----------------------------------------------------------------" << endl;
+    for (i = 0; i < 10; i++) {
+        cout << setw(6) << setprecision(3) << x[i] << "\t\t"
+            << setw(10) << setprecision(6) << y[i] << "\t"
+            << setw(10) << setprecision(6) << y_analytical[i] << "\t"
+            << setw(10) << setprecision(6) << first_order_error[i] << "\t"
+            << setw(10) << setprecision(6) << second_order_error[i] << endl;
     }
-    error = error / N;
-    cout << "Средняя ошибка: " << error << endl;
+
+    cout << endl << "Последние 10 точек:" << endl;
+    cout << "x\t\tЧисленное\tАналитическое\tПогр.1-го пор.\tПогр.2-го пор." << endl;
+    cout << "----------------------------------------------------------------" << endl;
+    for (i = N - 9; i <= N; i++) {
+        cout << setw(6) << setprecision(3) << x[i] << "\t\t"
+            << setw(10) << setprecision(6) << y[i] << "\t"
+            << setw(10) << setprecision(6) << y_analytical[i] << "\t"
+            << setw(10) << setprecision(6) << first_order_error[i] << "\t"
+            << setw(10) << setprecision(6) << second_order_error[i] << endl;
+    }
+
+    // Вывод статистики
+    cout << endl << "СТАТИСТИКА ПОГРЕШНОСТЕЙ:" << endl;
+    cout << "===================================" << endl;
+    cout << "Средняя абсолютная погрешность: " << error << endl;
+    cout << "Максимальная абсолютная погрешность: " << max_error << endl;
+    cout << "Максимальная погрешность 1-го порядка (производные): " << first_order_max_error << endl;
+    cout << "Максимальная погрешность 2-го порядка (вторые производные): " << second_order_max_error << endl;
+    cout << "Шаг сетки h: " << h << endl;
+
+    // Проверка аппроксимации д.у.
+    cout << endl << "ПРОВЕРКА АППРОКСИМАЦИИ ДУ:" << endl;
+    cout << "===================================" << endl;
+
+    double max_residual = 0.0;
+    for (i = 1; i < N; i++) {
+        // Вычисляем невязку: y'' + p(x)y' + q(x)y - f(x)
+        double y_second = (y[i + 1] - 2 * y[i] + y[i - 1]) / (h * h);
+        double y_first = (y[i + 1] - y[i - 1]) / (2 * h);
+        double residual = y_second + p(x[i]) * y_first + q(x[i]) * y[i] - f1(x[i]);
+
+        if (abs(residual) > max_residual) {
+            max_residual = abs(residual);
+        }
+    }
+    cout << "Максимальная невязка ДУ: " << max_residual << endl;
 
     // Сохранение результатов в файл
-    saveToFile(x, y, y_analytical, error);
+    saveToFile(x, y, y_analytical, first_order_error, second_order_error,
+        error, max_error, first_order_max_error, second_order_max_error);
 
     return 0;
 }
